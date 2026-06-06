@@ -8,6 +8,7 @@ enum SystemDockController {
     private static let legacyBackupKey = "systemDockPreferencesBackup"
 
     private(set) static var reservesRightEdgeForFullscreen = false
+    private static var didRestoreDockOnExit = false
 
     private static var pendingSync: DispatchWorkItem?
     private static var pendingCalibration: DispatchWorkItem?
@@ -24,12 +25,13 @@ enum SystemDockController {
 
     /// 替换系统 Dock：右侧常驻占位 + RightDock 覆盖显示
     static func activateReplacement(reservedWidth: CGFloat) {
+        didRestoreDockOnExit = false
         if readBackup() == nil {
             saveBackup(sanitizedBackupFromCurrentDock())
         }
 
-        applyReserveScript(width: reservedWidth)
         reservesRightEdgeForFullscreen = true
+        applyReserveScript(width: reservedWidth)
         scheduleCalibration(targetWidth: reservedWidth, delay: 0.5)
     }
 
@@ -44,8 +46,8 @@ enum SystemDockController {
         }
         let orientation = readDockString("orientation") ?? "bottom"
         if orientation != "right" || !reservesRightEdgeForFullscreen {
-            applyReserveScript(width: reservedWidth)
             reservesRightEdgeForFullscreen = true
+            applyReserveScript(width: reservedWidth)
             scheduleCalibration(targetWidth: reservedWidth, delay: 0.35)
         }
     }
@@ -58,19 +60,21 @@ enum SystemDockController {
 
     /// 退出 RightDock：恢复系统程序坞并清除备份
     static func restoreSystemDock() {
+        guard !didRestoreDockOnExit else { return }
+        didRestoreDockOnExit = true
         stopReplacementWork()
 
-        let restored: Bool
         if readBackup() != nil {
-            restored = applyBackupToDock(clearBackupAfter: true)
-        } else {
-            restored = applyStandardBottomDock()
+            let restored = applyBackupToDock(clearBackupAfter: true)
+            if !restored {
+                // 退出时 shell 偶发失败：再试一次，避免右侧细条残留
+                _ = applyBackupToDock(clearBackupAfter: true)
+            }
+            return
         }
 
-        if !restored {
-            // 退出时 shell 偶发失败：再试一次，避免右侧细条残留
-            _ = applyStandardBottomDock()
-        }
+        // 无备份时仅清理 RightDock 遗留的右侧细条，不覆盖用户当前 Dock 偏好
+        _ = repairStuckRightReplacementDock()
     }
 
     /// 菜单「恢复系统程序坞」：强制回到底部默认
@@ -194,6 +198,15 @@ enum SystemDockController {
         }
 
         return restored
+    }
+
+    /// RightDock 退出异常或未留下备份时，系统 Dock 可能仍停在右侧大 tile 占位状态
+    @discardableResult
+    private static func repairStuckRightReplacementDock() -> Bool {
+        let orientation = readDockString("orientation") ?? "bottom"
+        let tile = readDockInt("tilesize") ?? 64
+        guard orientation == "right", tile >= 72 else { return true }
+        return applyStandardBottomDock()
     }
 
     @discardableResult

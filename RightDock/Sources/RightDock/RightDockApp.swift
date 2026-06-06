@@ -60,7 +60,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 窗口列表变化只刷新 SwiftUI，不调整面板高度（全屏高度固定）
 
-        setupStatusItem()
         subscribeToDockNotifications()
         subscribeToAccessibilityRecheck()
 
@@ -143,7 +142,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var statusItem: NSStatusItem?
 
-    private func setupStatusItem() {
+    /// 仅 README 截图导出需要菜单栏占位；日常使用靠 Dock 面板右键菜单。
+    func setupStatusItemForExport() {
+        guard statusItem == nil else { return }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusMenu = buildStatusMenu()
 
@@ -264,7 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         1. 在辅助功能里删除旧的 RightDock，点 + 添加：
         /Applications/RightDock.app
         2. 打开开关
-        3. 菜单栏 Dock → 退出 RightDock
+        3. 右键右侧 Dock 面板 → 退出 RightDock
         4. 从启动台或应用程序重新打开 RightDock
         """
         alert.runModal()
@@ -308,8 +309,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() {
-        FullscreenLayoutEnforcer.shared.stop()
-        SystemDockController.restoreSystemDock()
         NSApp.terminate(nil)
     }
 }

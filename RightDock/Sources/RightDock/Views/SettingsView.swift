@@ -26,7 +26,7 @@ struct SettingsView: View {
                     NotificationCenter.default.post(name: .rightDockRestoreTitleBar, object: nil)
                 }
 
-                Text("Cursor 等若缺少左上角红黄绿：先点上方按钮，或在应用内按 ⌃⌘F；也可右键菜单栏 RightDock 图标或本 Dock 面板。")
+                Text("Cursor 等若缺少左上角红黄绿：先点上方按钮，或在应用内按 ⌃⌘F；也可右键本 Dock 面板。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

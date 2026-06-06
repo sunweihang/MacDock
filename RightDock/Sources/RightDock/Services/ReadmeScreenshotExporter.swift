@@ -11,6 +11,7 @@ enum ReadmeScreenshotExporter {
         try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            appDelegate.setupStatusItemForExport()
             exportAll(appDelegate: appDelegate, to: outDir)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 NSApp.terminate(nil)
