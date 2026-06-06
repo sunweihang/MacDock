@@ -48,6 +48,13 @@ final class DockPanelController: NSObject {
         globalDragMonitor.uninstall()
     }
 
+    func exportScreenshot(to url: URL) -> Bool {
+        guard let panel, let view = panel.contentView else { return false }
+        panel.displayIfNeeded()
+        let bg = NSColor(red: 0.12, green: 0.12, blue: 0.14, alpha: 1)
+        return ViewSnapshot.savePNG(of: view, to: url, background: bg, trimVertical: true)
+    }
+
     func relayout() {
         guard !isLiveResizingWidth else { return }
         applyScreenFrame()
@@ -91,6 +98,8 @@ final class DockPanelController: NSObject {
 
         panel.isFloatingPanel = true
         panel.level = .statusBar
+        // 允许系统截图 / 屏幕录制捕获 Dock 面板（默认 NSPanel 为 sharingNone，README 截图会只剩壁纸）
+        panel.sharingType = .readOnly
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.isOpaque = false
         panel.backgroundColor = .clear

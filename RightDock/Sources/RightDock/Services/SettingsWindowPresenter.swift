@@ -29,4 +29,10 @@ enum SettingsWindowPresenter {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    static func exportScreenshot(to url: URL) -> Bool {
+        guard let window else { return false }
+        window.displayIfNeeded()
+        return ViewSnapshot.savePNG(of: window, to: url, padding: 0)
+    }
 }

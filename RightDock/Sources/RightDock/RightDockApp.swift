@@ -63,6 +63,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         subscribeToDockNotifications()
         subscribeToAccessibilityRecheck()
+
+        ReadmeScreenshotExporter.runIfRequested(appDelegate: self)
+    }
+
+    func exportDockScreenshot(to url: URL) -> Bool {
+        dockPanel?.exportScreenshot(to: url) ?? false
+    }
+
+    var statusBarButtonForExport: NSStatusBarButton? {
+        statusItem?.button
+    }
+
+    func statusMenuForExport() -> NSMenu {
+        buildStatusMenu()
     }
 
     private func subscribeToAccessibilityRecheck() {

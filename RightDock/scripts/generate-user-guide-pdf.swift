@@ -48,101 +48,10 @@ func loadImage(_ path: URL) -> NSImage? {
     return NSImage(contentsOf: path)
 }
 
-// MARK: - Screenshots
-
+// MARK: - Screenshots（复用 capture-guide-screenshots.swift，支持多显示器与窗口捕获）
 ensureDir(shotDir)
-_ = shell(["open", "-a", "/Applications/RightDock.app"])
-Thread.sleep(forTimeInterval: 1.2)
-
-if let screen = NSScreen.main {
-    let sf = screen.frame
-    let dockW: CGFloat = 132
-    captureRegion(
-        CGRect(x: sf.maxX - dockW, y: sf.minY + 38, width: dockW, height: sf.height - 38),
-        to: shotDir.appendingPathComponent("01-dock-panel.png")
-    )
-}
-
-_ = runAppleScript("""
-tell application "RightDock" to activate
-delay 0.5
-tell application "System Events"
-  tell process "RightDock"
-    set frontmost to true
-    tell menu bar item 1 of menu bar 2
-      click
-      delay 0.6
-    end tell
-  end tell
-end tell
-""")
-if let screen = NSScreen.main {
-    captureRegion(
-        CGRect(x: screen.frame.maxX - 520, y: screen.frame.maxY - 560, width: 520, height: 560),
-        to: shotDir.appendingPathComponent("02-menu-bar.png")
-    )
-}
-
-let settingsRect = runAppleScript("""
-tell application "System Events"
-  tell process "RightDock"
-    tell menu bar item 1 of menu bar 2
-      click menu item "设置…" of menu 1
-    end tell
-    delay 0.9
-    set w to front window
-    set p to position of w
-    set s to size of w
-    return (item 1 of p as text) & "," & (item 2 of p as text) & "," & (item 1 of s as text) & "," & (item 2 of s as text)
-  end tell
-end tell
-""")
-
-if let settingsRect {
-    let parts = settingsRect.split(separator: ",").compactMap { Double($0) }
-    if parts.count == 4 {
-        captureRegion(
-            CGRect(x: parts[0] - 8, y: parts[1] - 8, width: parts[2] + 16, height: parts[3] + 16),
-            to: shotDir.appendingPathComponent("03-settings.png")
-        )
-    }
-}
-
-_ = shell(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
-Thread.sleep(forTimeInterval: 2.5)
-if let rect = runAppleScript("""
-tell application "System Events"
-  repeat with p in processes
-    if name of p is "系统设置" or name of p is "System Settings" then
-      tell p
-        set w to front window
-        set pos to position of w
-        set sz to size of w
-        return (item 1 of pos as text) & "," & (item 2 of pos as text) & "," & (item 1 of sz as text) & "," & (item 2 of sz as text)
-      end tell
-    end if
-  end repeat
-end tell
-""") {
-    let parts = rect.split(separator: ",").compactMap { Double($0) }
-    if parts.count == 4 {
-        captureRegion(
-            CGRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3]),
-            to: shotDir.appendingPathComponent("04-accessibility.png")
-        )
-    }
-}
-
-_ = shell(["open", "-a", "Cursor"])
-Thread.sleep(forTimeInterval: 0.8)
-if let screen = NSScreen.main {
-    _ = shell(["screencapture", "-x", shotDir.appendingPathComponent("05-desktop-overview.png").path])
-    let dockW: CGFloat = 132
-    captureRegion(
-        CGRect(x: 0, y: 38, width: screen.frame.width - dockW, height: screen.frame.height - 38),
-        to: shotDir.appendingPathComponent("06-window-aligned.png")
-    )
-}
+let captureScript = root.appendingPathComponent("scripts/capture-guide-screenshots.swift")
+_ = shell(["swift", captureScript.path, shotDir.path])
 
 // MARK: - PDF
 
