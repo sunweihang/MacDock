@@ -38,8 +38,19 @@ private struct PinnedAppButton: View {
     @ObservedObject var runningApps: RunningAppsService
 
     private var isRunning: Bool {
-        guard !app.isFolderPin else { return false }
+        guard !app.isFolderPin, !app.isTrashPin else { return false }
         return runningApps.runningApps.contains { $0.bundleIdentifier == app.bundleIdentifier }
+    }
+
+    private var helpText: String {
+        if app.isFolderPin { return "\(app.displayName)\n\(app.folderPath ?? "")" }
+        return app.displayName
+    }
+
+    private var openActionTitle: String {
+        if app.isTrashPin { return "打开废纸篓" }
+        if app.isFolderPin { return "在访达中打开" }
+        return "打开 / 切换到窗口"
     }
 
     private var isActive: Bool {
@@ -63,9 +74,9 @@ private struct PinnedAppButton: View {
             )
         }
         .buttonStyle(.plain)
-        .help(app.isFolderPin ? "\(app.displayName)\n\(app.folderPath ?? "")" : app.displayName)
+        .help(helpText)
         .contextMenu {
-            Button(app.isFolderPin ? "在访达中打开" : "打开 / 切换到窗口") {
+            Button(openActionTitle) {
                 AppLauncher.activate(pinned: app, showAllWindows: false)
             }
             if isRunning {

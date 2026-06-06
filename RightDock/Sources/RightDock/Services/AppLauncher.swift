@@ -3,6 +3,9 @@ import AppKit
 @MainActor
 enum AppLauncher {
     static func icon(for pinned: PinnedApp) -> NSImage {
+        if pinned.isTrashPin {
+            return trashIcon()
+        }
         if let path = pinned.folderPath {
             return NSWorkspace.shared.icon(forFile: path)
         }
@@ -28,12 +31,35 @@ enum AppLauncher {
     }
 
     static func activate(pinned: PinnedApp, showAllWindows: Bool = false) {
+        if pinned.isTrashPin {
+            openTrash()
+            return
+        }
         if let path = pinned.folderPath {
             let url = URL(fileURLWithPath: path, isDirectory: true)
             NSWorkspace.shared.open(url)
             return
         }
         activatePinned(bundleIdentifier: pinned.bundleIdentifier, showAllWindows: showAllWindows)
+    }
+
+    private static func trashIcon() -> NSImage {
+        if let icon = NSImage(named: NSImage.trashFullName) {
+            return icon
+        }
+        let trashPath = (NSHomeDirectory() as NSString).appendingPathComponent(".Trash")
+        return NSWorkspace.shared.icon(forFile: trashPath)
+    }
+
+    private static func openTrash() {
+        let source = #"tell application "Finder" to open trash"#
+        if let script = NSAppleScript(source: source) {
+            var error: NSDictionary?
+            script.executeAndReturnError(&error)
+            if error == nil { return }
+        }
+        let trashURL = URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent(".Trash"), isDirectory: true)
+        NSWorkspace.shared.open(trashURL)
     }
 
     /// 与系统程序坞一致：左键一律 openApplication(activates: true)；右键「显示全部窗口」才 activateAllWindows。

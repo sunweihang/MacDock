@@ -216,7 +216,7 @@ final class PinnedIconCell: NSView {
         imageView.isHidden = false
         imageView.image = AppLauncher.icon(for: pinned)
 
-        if pinned.isFolderPin {
+        if pinned.isFolderPin || pinned.isTrashPin {
             activeBackground.isHidden = true
             runningDot.isHidden = true
             imageView.alphaValue = 1
@@ -248,9 +248,16 @@ final class PinnedIconCell: NSView {
     func showContextMenu(with event: NSEvent) {
         refreshAppearance()
         let menu = NSMenu()
-        let openTitle = pinned.isFolderPin ? "在访达中打开" : "打开 / 切换到窗口"
+        let openTitle: String
+        if pinned.isTrashPin {
+            openTitle = "打开废纸篓"
+        } else if pinned.isFolderPin {
+            openTitle = "在访达中打开"
+        } else {
+            openTitle = "打开 / 切换到窗口"
+        }
         menu.addItem(withTitle: openTitle, action: #selector(menuActivate(_:)), keyEquivalent: "")
-        if !pinned.isFolderPin,
+        if !pinned.isFolderPin, !pinned.isTrashPin,
            NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == pinned.bundleIdentifier }) {
             menu.addItem(withTitle: "显示该应用全部窗口", action: #selector(menuActivateAll(_:)), keyEquivalent: "")
         }

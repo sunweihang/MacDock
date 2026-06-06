@@ -309,6 +309,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() {
+        FullscreenLayoutEnforcer.shared.stop()
+        SystemDockController.restoreSystemDock()
+        Thread.sleep(forTimeInterval: 0.45)
         NSApp.terminate(nil)
     }
 }

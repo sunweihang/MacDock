@@ -38,6 +38,10 @@ struct PinnedApp: Identifiable, Codable, Equatable {
     }
 
     var isFolderPin: Bool { folderPath != nil }
+
+    static let trashPinBundleIdentifier = "com.mactools.RightDock.trash-pin"
+
+    var isTrashPin: Bool { bundleIdentifier == Self.trashPinBundleIdentifier }
 }
 
 @MainActor
@@ -250,12 +254,12 @@ final class DockSettings: ObservableObject {
     }
 
     static let folderPinBundleIdentifier = "com.mactools.RightDock.folder-pin"
-
     private static var defaultPinnedApps: [PinnedApp] {
         [
             macintoshHDRootPin,
             PinnedApp(bundleIdentifier: "com.apple.finder", displayName: "Finder"),
             PinnedApp(bundleIdentifier: "com.apple.Safari", displayName: "Safari"),
+            trashPin,
         ]
     }
 
@@ -267,9 +271,17 @@ final class DockSettings: ObservableObject {
         )
     }
 
+    static var trashPin: PinnedApp {
+        PinnedApp(bundleIdentifier: PinnedApp.trashPinBundleIdentifier, displayName: "废纸篓")
+    }
+
     private func ensureBuiltInFolderPins() {
-        guard !pinnedApps.contains(where: { $0.folderPath == "/" }) else { return }
-        pinnedApps.insert(Self.macintoshHDRootPin, at: 0)
+        if !pinnedApps.contains(where: { $0.folderPath == "/" }) {
+            pinnedApps.insert(Self.macintoshHDRootPin, at: 0)
+        }
+        if !pinnedApps.contains(where: { $0.bundleIdentifier == PinnedApp.trashPinBundleIdentifier }) {
+            pinnedApps.append(Self.trashPin)
+        }
     }
 
     private func persistPinnedApps() {

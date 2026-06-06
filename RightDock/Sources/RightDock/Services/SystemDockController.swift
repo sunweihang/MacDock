@@ -63,18 +63,24 @@ enum SystemDockController {
         guard !didRestoreDockOnExit else { return }
         didRestoreDockOnExit = true
         stopReplacementWork()
+        UserDefaults.standard.synchronize()
 
+        var restored = false
         if readBackup() != nil {
-            let restored = applyBackupToDock(clearBackupAfter: true)
+            restored = applyBackupToDock(clearBackupAfter: true, makeVisible: true)
             if !restored {
-                // 退出时 shell 偶发失败：再试一次，避免右侧细条残留
-                _ = applyBackupToDock(clearBackupAfter: true)
+                restored = applyBackupToDock(clearBackupAfter: true, makeVisible: true)
             }
-            return
+        }
+        if !restored {
+            restored = repairStuckRightReplacementDock()
+        }
+        if !restored {
+            restored = applyStandardBottomDock()
         }
 
-        // 无备份时仅清理 RightDock 遗留的右侧细条，不覆盖用户当前 Dock 偏好
-        _ = repairStuckRightReplacementDock()
+        // applicationWillTerminate 时间很短，detached 脚本作兜底
+        scheduleDetachedRestoreFallback()
     }
 
     /// 菜单「恢复系统程序坞」：强制回到底部默认
@@ -176,25 +182,28 @@ enum SystemDockController {
     }
 
     @discardableResult
-    private static func applyBackupToDock(clearBackupAfter: Bool) -> Bool {
+    private static func applyBackupToDock(clearBackupAfter: Bool, makeVisible: Bool = false) -> Bool {
         guard let backup = readBackup() else {
             return applyStandardBottomDock()
         }
 
         // 右侧占位是 RightDock 留下的状态，不能原样恢复
         let orientation = backup.orientation == "right" ? "bottom" : backup.orientation
+        let autohide = makeVisible ? false : backup.autohide
         let restored = applyDockPreferences(
             orientation: orientation,
-            autohide: backup.autohide,
+            autohide: autohide,
             autohideDelay: backup.autohideDelay,
             autohideTimeModifier: backup.autohideTimeModifier,
             tilesize: backup.tilesize,
-            largesize: backup.largesize
+            largesize: backup.largesize,
+            magnification: makeVisible ? true : nil
         )
 
         if restored, clearBackupAfter {
             clearBackup()
             clearLegacyBackup()
+            UserDefaults.standard.synchronize()
         }
 
         return restored
@@ -204,8 +213,7 @@ enum SystemDockController {
     @discardableResult
     private static func repairStuckRightReplacementDock() -> Bool {
         let orientation = readDockString("orientation") ?? "bottom"
-        let tile = readDockInt("tilesize") ?? 64
-        guard orientation == "right", tile >= 72 else { return true }
+        guard orientation == "right" else { return false }
         return applyStandardBottomDock()
     }
 
@@ -213,11 +221,12 @@ enum SystemDockController {
     private static func applyStandardBottomDock() -> Bool {
         applyDockPreferences(
             orientation: "bottom",
-            autohide: true,
+            autohide: false,
             autohideDelay: 0.5,
             autohideTimeModifier: 0.5,
             tilesize: 64,
-            largesize: 128
+            largesize: 128,
+            magnification: true
         )
     }
 
@@ -228,7 +237,8 @@ enum SystemDockController {
         autohideDelay: Double,
         autohideTimeModifier: Double,
         tilesize: Int,
-        largesize: Int?
+        largesize: Int?,
+        magnification: Bool? = nil
     ) -> Bool {
         let autohideStr = autohide ? "true" : "false"
         var parts = [
@@ -245,8 +255,35 @@ enum SystemDockController {
         if let largesize {
             parts.append("/usr/bin/defaults write com.apple.dock largesize -int \(largesize)")
         }
-        parts.append("/usr/bin/killall Dock 2>/dev/null || true")
-        return runShell(parts.joined(separator: " && "))
+        if let magnification {
+            let magStr = magnification ? "true" : "false"
+            parts.append("/usr/bin/defaults write com.apple.dock magnification -bool \(magStr)")
+        }
+        guard runShell(parts.joined(separator: " && ")) else { return false }
+        _ = runShell("/usr/bin/killall Dock 2>/dev/null || true")
+        return true
+    }
+
+    /// 应用退出后 detached 执行，避免 willTerminate 来不及跑完 shell
+    private static func scheduleDetachedRestoreFallback() {
+        let scriptPath: String
+        if let bundled = Bundle.main.url(forResource: "restore-system-dock", withExtension: "sh") {
+            scriptPath = bundled.path
+        } else {
+            let devPath = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("scripts/restore-system-dock.sh")
+            guard FileManager.default.isExecutableFile(atPath: devPath.path) else { return }
+            scriptPath = devPath.path
+        }
+        _ = runShell("/bin/zsh -c '/bin/sleep 0.35; /bin/zsh \(shellQuote(scriptPath)) >/dev/null 2>&1 &'")
+    }
+
+    private static func shellQuote(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     /// 若当前已是 RightDock 留下的右侧占位，则备份「底部默认」而非错误状态

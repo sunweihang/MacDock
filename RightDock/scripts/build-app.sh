@@ -14,6 +14,8 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp Resources/Info.plist "$APP_DIR/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP_DIR/Contents/Resources/AppIcon.icns"
+cp scripts/restore-system-dock.sh "$APP_DIR/Contents/Resources/restore-system-dock.sh"
+chmod +x "$APP_DIR/Contents/Resources/restore-system-dock.sh"
 cp ".build/release/${APP_NAME}" "$APP_DIR/Contents/MacOS/${APP_NAME}"
 chmod +x "$APP_DIR/Contents/MacOS/${APP_NAME}"
 
