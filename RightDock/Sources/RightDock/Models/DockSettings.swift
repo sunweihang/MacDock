@@ -27,9 +27,17 @@ enum DockIconSize: String, CaseIterable, Identifiable, Codable {
 }
 
 struct PinnedApp: Identifiable, Codable, Equatable {
-    var id: String { bundleIdentifier }
     let bundleIdentifier: String
     var displayName: String
+    /// 若设置则点击时用访达打开该路径，而非启动应用。
+    var folderPath: String?
+
+    var id: String {
+        if let folderPath { return "folder:\(folderPath)" }
+        return bundleIdentifier
+    }
+
+    var isFolderPin: Bool { folderPath != nil }
 }
 
 @MainActor
@@ -199,6 +207,8 @@ final class DockSettings: ObservableObject {
         } else {
             windowAliases = [:]
         }
+
+        ensureBuiltInFolderPins()
     }
 
     func displayTitle(aliasKey: String, default defaultTitle: String) -> String {
@@ -239,11 +249,27 @@ final class DockSettings: ObservableObject {
         }
     }
 
+    static let folderPinBundleIdentifier = "com.mactools.RightDock.folder-pin"
+
     private static var defaultPinnedApps: [PinnedApp] {
         [
+            macintoshHDRootPin,
             PinnedApp(bundleIdentifier: "com.apple.finder", displayName: "Finder"),
             PinnedApp(bundleIdentifier: "com.apple.Safari", displayName: "Safari"),
         ]
+    }
+
+    static var macintoshHDRootPin: PinnedApp {
+        PinnedApp(
+            bundleIdentifier: folderPinBundleIdentifier,
+            displayName: "Macintosh HD",
+            folderPath: "/"
+        )
+    }
+
+    private func ensureBuiltInFolderPins() {
+        guard !pinnedApps.contains(where: { $0.folderPath == "/" }) else { return }
+        pinnedApps.insert(Self.macintoshHDRootPin, at: 0)
     }
 
     private func persistPinnedApps() {
@@ -253,8 +279,23 @@ final class DockSettings: ObservableObject {
     }
 
     func addPinned(bundleIdentifier: String, displayName: String) {
-        guard !pinnedApps.contains(where: { $0.bundleIdentifier == bundleIdentifier }) else { return }
-        pinnedApps.append(PinnedApp(bundleIdentifier: bundleIdentifier, displayName: displayName))
+        guard !pinnedApps.contains(where: { $0.bundleIdentifier == bundleIdentifier && !$0.isFolderPin }) else { return }
+        pinnedApps.append(PinnedApp(bundleIdentifier: bundleIdentifier, displayName: displayName, folderPath: nil))
+    }
+
+    func addPinnedFolder(path: String, displayName: String) {
+        let normalized = (path as NSString).standardizingPath
+        guard !normalized.isEmpty else { return }
+        guard !pinnedApps.contains(where: { $0.folderPath == normalized }) else { return }
+        pinnedApps.append(PinnedApp(
+            bundleIdentifier: Self.folderPinBundleIdentifier,
+            displayName: displayName,
+            folderPath: normalized
+        ))
+    }
+
+    func removePinned(withId id: String) {
+        pinnedApps.removeAll { $0.id == id }
     }
 
     func removePinned(at offsets: IndexSet) {

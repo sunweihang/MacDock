@@ -70,12 +70,12 @@ struct SettingsView: View {
                 List {
                     ForEach(settings.pinnedApps) { app in
                         HStack {
-                            Image(nsImage: AppLauncher.icon(forBundleIdentifier: app.bundleIdentifier))
+                            Image(nsImage: AppLauncher.icon(for: app))
                                 .resizable()
                                 .frame(width: 24, height: 24)
                             Text(app.displayName)
                             Spacer()
-                            Text(app.bundleIdentifier)
+                            Text(app.folderPath ?? app.bundleIdentifier)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

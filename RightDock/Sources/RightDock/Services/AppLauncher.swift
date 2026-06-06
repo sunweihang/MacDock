@@ -2,6 +2,13 @@ import AppKit
 
 @MainActor
 enum AppLauncher {
+    static func icon(for pinned: PinnedApp) -> NSImage {
+        if let path = pinned.folderPath {
+            return NSWorkspace.shared.icon(forFile: path)
+        }
+        return icon(forBundleIdentifier: pinned.bundleIdentifier)
+    }
+
     static func icon(forBundleIdentifier bundleId: String) -> NSImage {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
             return NSImage(systemSymbolName: "app", accessibilityDescription: nil)
@@ -18,6 +25,15 @@ enum AppLauncher {
         return bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? bundleId
+    }
+
+    static func activate(pinned: PinnedApp, showAllWindows: Bool = false) {
+        if let path = pinned.folderPath {
+            let url = URL(fileURLWithPath: path, isDirectory: true)
+            NSWorkspace.shared.open(url)
+            return
+        }
+        activatePinned(bundleIdentifier: pinned.bundleIdentifier, showAllWindows: showAllWindows)
     }
 
     /// 与系统程序坞一致：左键一律 openApplication(activates: true)；右键「显示全部窗口」才 activateAllWindows。

@@ -57,18 +57,16 @@ final class PinnedAppsGridContainer: NSView {
         guard let settings else { return }
 
         for pinned in settings.pinnedApps {
-            let bundleId = pinned.bundleIdentifier
             let cell = PinnedIconCell(
-                bundleIdentifier: bundleId,
-                displayName: pinned.displayName,
+                pinned: pinned,
                 settings: settings
             )
             cell.onActivate = { showAllWindows in
-                AppLauncher.activatePinned(bundleIdentifier: bundleId, showAllWindows: showAllWindows)
+                AppLauncher.activate(pinned: pinned, showAllWindows: showAllWindows)
             }
             cell.onRemove = { [weak self] in
                 guard let self, let settings = self.settings else { return }
-                settings.pinnedApps.removeAll { $0.bundleIdentifier == bundleId }
+                settings.removePinned(withId: pinned.id)
                 self.reload()
             }
             addSubview(cell)
@@ -158,8 +156,8 @@ final class PinnedAppsGridContainer: NSView {
 
 @MainActor
 final class PinnedIconCell: NSView {
-    var bundleIdentifier: String { bundleIdentifierStorage }
-    private let bundleIdentifierStorage: String
+    var bundleIdentifier: String { pinned.bundleIdentifier }
+    private let pinned: PinnedApp
     let displayName: String
     private let settings: DockSettings
 
@@ -170,9 +168,9 @@ final class PinnedIconCell: NSView {
     private let activeBackground = NSView()
     private let runningDot = NSView()
 
-    init(bundleIdentifier: String, displayName: String, settings: DockSettings) {
-        self.bundleIdentifierStorage = bundleIdentifier
-        self.displayName = displayName
+    init(pinned: PinnedApp, settings: DockSettings) {
+        self.pinned = pinned
+        self.displayName = pinned.displayName
         self.settings = settings
         super.init(frame: .zero)
         wantsLayer = true
@@ -216,15 +214,22 @@ final class PinnedIconCell: NSView {
 
     func refreshAppearance() {
         imageView.isHidden = false
-        imageView.image = AppLauncher.icon(forBundleIdentifier: bundleIdentifierStorage)
+        imageView.image = AppLauncher.icon(for: pinned)
+
+        if pinned.isFolderPin {
+            activeBackground.isHidden = true
+            runningDot.isHidden = true
+            imageView.alphaValue = 1
+            return
+        }
 
         let running = NSWorkspace.shared.runningApplications.contains {
-            $0.bundleIdentifier == bundleIdentifierStorage
+            $0.bundleIdentifier == pinned.bundleIdentifier
         }
         let active: Bool = {
             guard running,
                   let front = NSWorkspace.shared.frontmostApplication,
-                  front.bundleIdentifier == bundleIdentifierStorage else {
+                  front.bundleIdentifier == pinned.bundleIdentifier else {
                 return false
             }
             return true
@@ -243,8 +248,10 @@ final class PinnedIconCell: NSView {
     func showContextMenu(with event: NSEvent) {
         refreshAppearance()
         let menu = NSMenu()
-        menu.addItem(withTitle: "打开 / 切换到窗口", action: #selector(menuActivate(_:)), keyEquivalent: "")
-        if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == bundleIdentifierStorage }) {
+        let openTitle = pinned.isFolderPin ? "在访达中打开" : "打开 / 切换到窗口"
+        menu.addItem(withTitle: openTitle, action: #selector(menuActivate(_:)), keyEquivalent: "")
+        if !pinned.isFolderPin,
+           NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == pinned.bundleIdentifier }) {
             menu.addItem(withTitle: "显示该应用全部窗口", action: #selector(menuActivateAll(_:)), keyEquivalent: "")
         }
         menu.addItem(.separator())

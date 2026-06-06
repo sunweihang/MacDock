@@ -38,7 +38,8 @@ private struct PinnedAppButton: View {
     @ObservedObject var runningApps: RunningAppsService
 
     private var isRunning: Bool {
-        runningApps.runningApps.contains { $0.bundleIdentifier == app.bundleIdentifier }
+        guard !app.isFolderPin else { return false }
+        return runningApps.runningApps.contains { $0.bundleIdentifier == app.bundleIdentifier }
     }
 
     private var isActive: Bool {
@@ -51,10 +52,10 @@ private struct PinnedAppButton: View {
 
     var body: some View {
         Button {
-            AppLauncher.activatePinned(bundleIdentifier: app.bundleIdentifier, showAllWindows: false)
+            AppLauncher.activate(pinned: app, showAllWindows: false)
         } label: {
             PinnedAppIconLabel(
-                icon: AppLauncher.icon(forBundleIdentifier: app.bundleIdentifier),
+                icon: AppLauncher.icon(for: app),
                 iconSize: settings.barIconSize,
                 tileSize: settings.pinnedSquareSize,
                 isRunning: isRunning,
@@ -62,19 +63,19 @@ private struct PinnedAppButton: View {
             )
         }
         .buttonStyle(.plain)
-        .help(app.displayName)
+        .help(app.isFolderPin ? "\(app.displayName)\n\(app.folderPath ?? "")" : app.displayName)
         .contextMenu {
-            Button("打开 / 切换到窗口") {
-                AppLauncher.activatePinned(bundleIdentifier: app.bundleIdentifier, showAllWindows: false)
+            Button(app.isFolderPin ? "在访达中打开" : "打开 / 切换到窗口") {
+                AppLauncher.activate(pinned: app, showAllWindows: false)
             }
             if isRunning {
                 Button("显示该应用全部窗口") {
-                    AppLauncher.activatePinned(bundleIdentifier: app.bundleIdentifier, showAllWindows: true)
+                    AppLauncher.activate(pinned: app, showAllWindows: true)
                 }
             }
             Divider()
             Button("从快捷方式移除", role: .destructive) {
-                settings.pinnedApps.removeAll { $0.bundleIdentifier == app.bundleIdentifier }
+                settings.removePinned(withId: app.id)
             }
         }
     }
