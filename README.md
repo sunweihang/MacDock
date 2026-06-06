@@ -18,11 +18,11 @@
 
 | 桌面概览（Dock + 窗口对齐） | 右侧 Dock 面板 |
 |:---:|:---:|
-| ![桌面概览](RightDock/docs/screenshots/06-window-aligned.png) | ![Dock 面板](RightDock/docs/screenshots/01-dock-panel.png) |
+| ![桌面概览](https://cdn.jsdelivr.net/gh/sunweihang/MacDock@main/RightDock/docs/screenshots/06-window-aligned.png) | ![Dock 面板](https://cdn.jsdelivr.net/gh/sunweihang/MacDock@main/RightDock/docs/screenshots/01-dock-panel.png) |
 
 | 菜单栏控制 | 设置面板 |
 |:---:|:---:|
-| ![菜单栏](RightDock/docs/screenshots/02-menu-bar.png) | ![设置](RightDock/docs/screenshots/03-settings.png) |
+| ![菜单栏](https://cdn.jsdelivr.net/gh/sunweihang/MacDock@main/RightDock/docs/screenshots/02-menu-bar.png) | ![设置](https://cdn.jsdelivr.net/gh/sunweihang/MacDock@main/RightDock/docs/screenshots/03-settings.png) |
 
 ### 主要功能
 
@@ -86,7 +86,7 @@ cd RightDock
 4. 打开开关
 5. 菜单栏 Dock 菜单应显示「辅助功能已生效 ✓」
 
-![辅助功能设置](RightDock/docs/screenshots/04-accessibility.png)
+![辅助功能设置](https://cdn.jsdelivr.net/gh/sunweihang/MacDock@main/RightDock/docs/screenshots/04-accessibility.png)
 
 若授权后仍无效，可在终端执行后重复上述步骤：
 
@@ -139,11 +139,11 @@ MIT License — 详见 [LICENSE](LICENSE)
 
 | Desktop overview (dock + aligned window) | Right-side dock panel |
 |:---:|:---:|
-| ![Desktop overview](RightDock/docs/screenshots/06-window-aligned.png) | ![Dock panel](RightDock/docs/screenshots/01-dock-panel.png) |
+| ![Desktop overview](https://cdn.jsdelivr.net/gh/sunweihang/MacDock@main/RightDock/docs/screenshots/06-window-aligned.png) | ![Dock panel](https://cdn.jsdelivr.net/gh/sunweihang/MacDock@main/RightDock/docs/screenshots/01-dock-panel.png) |
 
 | Menu bar controls | Settings |
 |:---:|:---:|
-| ![Menu bar](RightDock/docs/screenshots/02-menu-bar.png) | ![Settings](RightDock/docs/screenshots/03-settings.png) |
+| ![Menu bar](https://cdn.jsdelivr.net/gh/sunweihang/MacDock@main/RightDock/docs/screenshots/02-menu-bar.png) | ![Settings](https://cdn.jsdelivr.net/gh/sunweihang/MacDock@main/RightDock/docs/screenshots/03-settings.png) |
 
 ### Key Features
 
@@ -207,7 +207,7 @@ Window focus and drag-to-pin require **Accessibility** access:
 4. Enable the toggle
 5. The menu bar Dock menu should show accessibility as active ✓
 
-![Accessibility settings](RightDock/docs/screenshots/04-accessibility.png)
+![Accessibility settings](https://cdn.jsdelivr.net/gh/sunweihang/MacDock@main/RightDock/docs/screenshots/04-accessibility.png)
 
 If permission still fails after granting access:
 
