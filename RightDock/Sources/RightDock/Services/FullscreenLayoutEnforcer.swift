@@ -93,8 +93,7 @@ final class FullscreenLayoutEnforcer {
 
         guard let app = NSWorkspace.shared.frontmostApplication,
               let bundleId = app.bundleIdentifier,
-              bundleId != Bundle.main.bundleIdentifier,
-              !AppBundlePolicy.shouldSkipLayoutEnforcement(bundleIdentifier: bundleId) else {
+              bundleId != Bundle.main.bundleIdentifier else {
             return
         }
 
@@ -160,8 +159,12 @@ final class FullscreenLayoutEnforcer {
             return
         }
 
-        // Cursor 等 Electron：AppleScript position 在多屏上会偏移，统一走 AX 只改宽度。
-        let applied = WindowBoundsMatcher.setAXFrame(window, screenRectBottomLeftOrigin: target)
+        let applied: Bool
+        if AppBundlePolicy.usesWidthOnlyLayoutAdjustment(bundleIdentifier: bundleId) {
+            applied = WindowBoundsMatcher.setAXWidth(window, width: target.width)
+        } else {
+            applied = WindowBoundsMatcher.setAXFrame(window, screenRectBottomLeftOrigin: target)
+        }
 
         if applied {
             lastAdjustKey = key

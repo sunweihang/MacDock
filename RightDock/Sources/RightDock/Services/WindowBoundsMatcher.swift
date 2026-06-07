@@ -100,6 +100,16 @@ enum WindowBoundsMatcher {
         return posOK && sizeOK
     }
 
+    /// 只改宽度，不动 position/高度（Cocos 等 Electron 对同时写 position+size 较敏感）。
+    @discardableResult
+    static func setAXWidth(_ element: AXUIElement, width: CGFloat) -> Bool {
+        guard var frame = axFrame(of: element) else { return false }
+        frame.size.width = max(200, width)
+        var size = frame.size
+        guard let sizeValue = AXValueCreate(.cgSize, &size) else { return false }
+        return AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue) == .success
+    }
+
     /// Option+绿色按钮「填满屏幕」：宽高接近该屏 `visibleFrame`（普通绿键 Zoom 不算）。
     static func matchesOptionFillScreen(cgBounds: CGRect, on screen: NSScreen) -> Bool {
         let visible = screen.visibleFrame
