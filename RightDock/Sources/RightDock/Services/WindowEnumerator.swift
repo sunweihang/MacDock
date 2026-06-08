@@ -38,16 +38,23 @@ enum WindowEnumerator {
         var result: [EnumeratedWindow] = []
 
         for pid in allowedPids {
+            var pidWindows: [EnumeratedWindow] = []
+
             if accessibilityGranted {
-                let ax = axWindows(forPid: pid)
-                if !ax.isEmpty {
-                    result.append(contentsOf: ax)
-                    continue
+                pidWindows = axWindows(forPid: pid)
+            }
+
+            if pidWindows.isEmpty {
+                let cgOn = onScreen.filter { $0.pid == pid }
+                let cgMin = minimized.filter { $0.pid == pid }
+                pidWindows = merge(onScreen: cgOn, minimized: cgMin)
+                if pidWindows.isEmpty {
+                    // Fork 等最小化时 AX 无标准窗，需用全量 CG 列表
+                    pidWindows = cgWindows(forPid: pid)
                 }
             }
-            let cgOn = onScreen.filter { $0.pid == pid }
-            let cgMin = minimized.filter { $0.pid == pid }
-            result.append(contentsOf: merge(onScreen: cgOn, minimized: cgMin))
+
+            result.append(contentsOf: dedupeOverlappingByFrame(pidWindows).map(supplementTitleFromAX))
         }
         return result
     }
@@ -148,10 +155,75 @@ enum WindowEnumerator {
         var subroleRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &subroleRef) == .success,
            let subrole = subroleRef as? String {
-            let excluded: Set<String> = [kAXFloatingWindowSubrole as String]
+            // Fork 会把每个仓库标签注册为 AXDialog，不是独立窗口
+            let excluded: Set<String> = [
+                kAXFloatingWindowSubrole as String,
+                kAXDialogSubrole as String,
+            ]
             return !excluded.contains(subrole)
         }
         return true
+    }
+
+    /// 同一进程、相同几何位置的 CG 幽灵窗（Fork 多标签）合并为一个
+    private static func dedupeOverlappingByFrame(_ windows: [EnumeratedWindow]) -> [EnumeratedWindow] {
+        var byFrame: [String: EnumeratedWindow] = [:]
+        var withoutFrame: [EnumeratedWindow] = []
+
+        for window in windows {
+            let key = frameDedupeKey(window.bounds)
+            if key.isEmpty {
+                withoutFrame.append(window)
+                continue
+            }
+            if let existing = byFrame[key] {
+                byFrame[key] = pickRepresentative(existing, window)
+            } else {
+                byFrame[key] = window
+            }
+        }
+
+        return Array(byFrame.values) + withoutFrame
+    }
+
+    private static func frameDedupeKey(_ bounds: CGRect) -> String {
+        guard bounds.width > 0, bounds.height > 0 else { return "" }
+        return "\(Int(bounds.origin.x)),\(Int(bounds.origin.y)),\(Int(bounds.width)),\(Int(bounds.height))"
+    }
+
+    private static func pickRepresentative(_ a: EnumeratedWindow, _ b: EnumeratedWindow) -> EnumeratedWindow {
+        let aTitle = a.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bTitle = b.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if aTitle.isEmpty != bTitle.isEmpty {
+            return aTitle.isEmpty ? b : a
+        }
+        return a.windowID >= b.windowID ? a : b
+    }
+
+    /// CG 窗口常无标题；Fork 等可从 AX 前台/主窗口取当前标签名
+    private static func supplementTitleFromAX(_ window: EnumeratedWindow) -> EnumeratedWindow {
+        guard window.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return window }
+
+        let appElement = AXUIElementCreateApplication(window.pid)
+        for attribute in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] as [CFString] {
+            var windowRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(appElement, attribute, &windowRef) == .success,
+                  let ref = windowRef,
+                  CFGetTypeID(ref) == AXUIElementGetTypeID() else {
+                continue
+            }
+            let axWindow = ref as! AXUIElement
+            let title = axTitle(from: axWindow)
+            guard !title.isEmpty else { continue }
+            return EnumeratedWindow(
+                windowID: window.windowID,
+                pid: window.pid,
+                title: title,
+                bounds: window.bounds,
+                layer: window.layer
+            )
+        }
+        return window
     }
 
     private static func axTitle(from element: AXUIElement) -> String {
