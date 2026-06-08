@@ -124,6 +124,7 @@ final class RunningAppsService: NSObject, ObservableObject {
             app.activationPolicy == .regular
                 && app.bundleIdentifier != ownBundleId
                 && app.localizedName != nil
+                && !(app.bundleIdentifier.map(AppBundlePolicy.isHelperProcess) ?? false)
         }
 
         let pidToApp = Dictionary(uniqueKeysWithValues: regularApps.map { ($0.processIdentifier, $0) })
@@ -133,7 +134,8 @@ final class RunningAppsService: NSObject, ObservableObject {
 
         let parsedWindows = WindowEnumerator.collectWindows(
             accessibilityGranted: accessibilityGranted,
-            allowedPids: allowedPids
+            allowedPids: allowedPids,
+            bundleIdForPid: { pidToApp[$0]?.bundleIdentifier }
         )
 
         for window in parsedWindows {

@@ -43,8 +43,21 @@ enum WindowActivation {
         guard let app = NSRunningApplication(processIdentifier: pid) else { return }
         let bundleId = bundleIdentifier ?? app.bundleIdentifier ?? ""
         let processNames = candidateProcessNames(app: app, bundleIdentifier: bundleId)
+        let trimmedTitle = windowTitle.trimmingCharacters(in: .whitespacesAndNewlines)
 
         app.activate(options: [.activateIgnoringOtherApps])
+
+        if trimmedTitle.isEmpty, AppBundlePolicy.isElectron(bundleIdentifier: bundleId) {
+            for name in processNames {
+                if WindowFocusScript.activateProcess(
+                    processName: name,
+                    bundleIdentifier: bundleId.isEmpty ? nil : bundleId,
+                    allWindows: false
+                ) {
+                    return
+                }
+            }
+        }
 
         for name in processNames {
             for title in WindowFocusHelper.titlesForScript(windowTitle: windowTitle, displayTitle: displayTitle) {
@@ -63,6 +76,12 @@ enum WindowActivation {
                 return
             }
         }
+
+        WindowFocusHelper.activateRunningApplication(
+            pid: pid,
+            bundleIdentifier: bundleId,
+            restoreMinimized: true
+        )
     }
 
     private static func finish(pid: pid_t) {

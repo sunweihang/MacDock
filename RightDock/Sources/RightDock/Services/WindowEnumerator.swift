@@ -32,31 +32,172 @@ enum WindowEnumerator {
     }
 
     /// 已授权时优先用 AX 列窗口，避免 Cocos 等产生大量无标题 CG 幽灵窗口导致无法切换
-    static func collectWindows(accessibilityGranted: Bool, allowedPids: Set<pid_t>) -> [EnumeratedWindow] {
+    static func collectWindows(
+        accessibilityGranted: Bool,
+        allowedPids: Set<pid_t>,
+        bundleIdForPid: (pid_t) -> String?
+    ) -> [EnumeratedWindow] {
         let onScreen = onScreenWindows()
         let minimized = accessibilityGranted ? minimizedWindows(forPids: allowedPids) : []
         var result: [EnumeratedWindow] = []
 
         for pid in allowedPids {
+            let bundleId = bundleIdForPid(pid) ?? ""
             var pidWindows: [EnumeratedWindow] = []
 
             if accessibilityGranted {
-                pidWindows = axWindows(forPid: pid)
+                if AppBundlePolicy.isElectron(bundleIdentifier: bundleId) {
+                    pidWindows = electronWindows(
+                        forPid: pid,
+                        bundleId: bundleId,
+                        onScreen: onScreen,
+                        minimized: minimized
+                    )
+                } else {
+                    pidWindows = axWindows(forPid: pid)
+                }
             }
 
             if pidWindows.isEmpty {
                 let cgOn = onScreen.filter { $0.pid == pid }
                 let cgMin = minimized.filter { $0.pid == pid }
                 pidWindows = merge(onScreen: cgOn, minimized: cgMin)
-                if pidWindows.isEmpty {
-                    // Fork 等最小化时 AX 无标准窗，需用全量 CG 列表
+                if pidWindows.isEmpty, !AppBundlePolicy.isElectron(bundleIdentifier: bundleId) {
+                    // Fork 等最小化时 AX 无标准窗，需用全量 CG 列表（Electron 跳过，避免关闭后幽灵窗）
                     pidWindows = cgWindows(forPid: pid)
                 }
             }
 
-            result.append(contentsOf: dedupeOverlappingByFrame(pidWindows).map(supplementTitleFromAX))
+            pidWindows = dedupeOverlappingByFrame(pidWindows)
+            pidWindows = dedupeSameSizeEmptyTitles(pidWindows)
+            pidWindows = filterReachableWindows(
+                pidWindows,
+                onScreen: onScreen,
+                accessibilityGranted: accessibilityGranted
+            )
+            result.append(contentsOf: pidWindows.map(supplementTitleFromAX))
         }
         return result
+    }
+
+    /// Electron：AX 常把占位层也注册为标准窗，需与 CG 几何交叉验证
+    private static func electronWindows(
+        forPid pid: pid_t,
+        bundleId: String,
+        onScreen: [EnumeratedWindow],
+        minimized: [EnumeratedWindow]
+    ) -> [EnumeratedWindow] {
+        let ax = axWindows(forPid: pid)
+        let cgMerged = merge(
+            onScreen: onScreen.filter { $0.pid == pid },
+            minimized: minimized.filter { $0.pid == pid }
+        )
+        let cgByID = Dictionary(
+            uniqueKeysWithValues: cgMerged.filter { $0.windowID != 0 }.map { ($0.windowID, $0) }
+        )
+
+        var result: [EnumeratedWindow] = []
+
+        for window in ax {
+            let title = window.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty {
+                result.append(window)
+                continue
+            }
+
+            let bounds = window.windowID != 0 ? (cgByID[window.windowID]?.bounds ?? window.bounds) : window.bounds
+            guard WindowVisibilityFilter.isRealMainWindowGeometry(bounds, bundleId: bundleId) else { continue }
+            result.append(EnumeratedWindow(
+                windowID: window.windowID,
+                pid: window.pid,
+                title: window.title,
+                bounds: bounds,
+                layer: window.layer
+            ))
+        }
+
+        if result.isEmpty {
+            return cgMerged.filter {
+                !$0.title.isEmpty || WindowVisibilityFilter.isRealMainWindowGeometry($0.bounds, bundleId: bundleId)
+            }
+        }
+
+        let axIDs = Set(result.filter { $0.windowID != 0 }.map(\.windowID))
+        for cg in cgMerged where !cg.title.isEmpty {
+            if cg.windowID == 0 || !axIDs.contains(cg.windowID) {
+                result.append(cg)
+            }
+        }
+        return result
+    }
+
+    /// 同进程多个无标题、同尺寸 AX 重复项（飞书双 1337×859）只保留一个
+    private static func dedupeSameSizeEmptyTitles(_ windows: [EnumeratedWindow]) -> [EnumeratedWindow] {
+        var kept: [EnumeratedWindow] = []
+        var seenEmptySizeKeys = Set<String>()
+
+        for window in windows {
+            let title = window.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty {
+                kept.append(window)
+                continue
+            }
+            let key = "\(window.pid)|\(Int(window.bounds.width.rounded())),\(Int(window.bounds.height.rounded()))"
+            guard seenEmptySizeKeys.insert(key).inserted else { continue }
+            kept.append(window)
+        }
+        return kept
+    }
+
+    /// 保留屏幕内窗口与已最小化窗口；过滤关闭后残留的屏外 CG 幽灵窗
+    private static func filterReachableWindows(
+        _ windows: [EnumeratedWindow],
+        onScreen: [EnumeratedWindow],
+        accessibilityGranted: Bool
+    ) -> [EnumeratedWindow] {
+        let onScreenIDs = Set(onScreen.filter { $0.windowID != 0 }.map(\.windowID))
+        return windows.filter { window in
+            isReachableWindow(window, onScreenIDs: onScreenIDs, accessibilityGranted: accessibilityGranted)
+        }
+    }
+
+    private static func isReachableWindow(
+        _ window: EnumeratedWindow,
+        onScreenIDs: Set<CGWindowID>,
+        accessibilityGranted: Bool
+    ) -> Bool {
+        if window.windowID != 0, onScreenIDs.contains(window.windowID) {
+            return true
+        }
+
+        guard accessibilityGranted else {
+            return false
+        }
+
+        return isAXMinimized(window)
+    }
+
+    private static func isAXMinimized(_ window: EnumeratedWindow) -> Bool {
+        let appElement = AXUIElementCreateApplication(window.pid)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement] else {
+            return false
+        }
+
+        for axWindow in windows {
+            guard isStandardWindow(axWindow) else { continue }
+            let windowID = PrivateAX.cgWindowID(for: axWindow) ?? axWindowID(from: axWindow) ?? 0
+            if window.windowID != 0, windowID != window.windowID { continue }
+
+            if window.windowID == 0 {
+                let title = axTitle(from: axWindow)
+                if title != window.title.trimmingCharacters(in: .whitespacesAndNewlines) { continue }
+            }
+
+            return isMinimized(axWindow)
+        }
+        return false
     }
 
     /// 辅助功能可见的全部标准窗口（含最小化）

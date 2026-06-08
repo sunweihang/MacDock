@@ -12,9 +12,19 @@ enum AppBundlePolicy {
         "com.github.atom",
         "com.slack.Slack",
         "com.tencent.xinWeChat",
+        "com.volcengine.corplink",
         "com.electron.",
         "com.cocos.creator",
     ]
+
+    /// 辅助进程（小程序、Renderer 等）不应单独出现在窗口列表
+    static func isHelperProcess(bundleIdentifier: String) -> Bool {
+        let id = bundleIdentifier
+        if id.hasSuffix(".helper") { return true }
+        if id.contains("WeChatAppEx") { return true }
+        if id.contains("networkextension-wrapper") { return true }
+        return false
+    }
 
     /// Electron 应用改窗口几何时只缩宽度，避免直接写 position 导致丢窗或错位
     private static let widthOnlyLayoutPrefixes = [

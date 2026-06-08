@@ -59,7 +59,14 @@ enum WindowFocusHelper {
         guard let app = NSRunningApplication(processIdentifier: pid) else { return }
         let bundleId = app.bundleIdentifier ?? ""
 
-        if targetWindowID != 0 {
+        let onScreenIDs = Set(
+            WindowEnumerator.onScreenWindows()
+                .filter { $0.windowID != 0 }
+                .map(\.windowID)
+        )
+        let windowIsVisible = targetWindowID != 0 && onScreenIDs.contains(targetWindowID)
+
+        if windowIsVisible {
             WindowActivation.focusWindow(
                 windowID: targetWindowID,
                 pid: pid,
@@ -73,41 +80,59 @@ enum WindowFocusHelper {
             }
         }
 
-        if !bundleId.isEmpty {
-            AppLauncher.activatePinned(bundleIdentifier: bundleId, showAllWindows: false)
-        }
-
-        recoverOffScreenWindow(
+        activateRunningApplication(
             pid: pid,
-            windowTitle: windowTitle,
-            displayTitle: displayTitle
+            bundleIdentifier: bundleId,
+            restoreMinimized: true
         )
     }
 
-    /// Cocos 等 Electron 应用切走后 CG 可能仍显示 onScreen=false，需再 AXRaise 一次。
-    private static func recoverOffScreenWindow(
-        pid: pid_t,
-        windowTitle: String,
-        displayTitle: String
-    ) {
-        guard !hasOnScreenWindow(pid: pid) else { return }
-        guard let app = NSRunningApplication(processIdentifier: pid) else { return }
+    /// 按 Bundle ID 置前已运行应用（供 AppleScript 路径回退）
+    @discardableResult
+    static func activateRunningApplication(
+        bundleIdentifier: String?,
+        restoreMinimized: Bool
+    ) -> Bool {
+        guard let bundleIdentifier, !bundleIdentifier.isEmpty,
+              let app = NSWorkspace.shared.runningApplications.first(where: {
+                  $0.bundleIdentifier == bundleIdentifier && !$0.isTerminated
+              }) else {
+            return false
+        }
+        activateRunningApplication(
+            pid: app.processIdentifier,
+            bundleIdentifier: bundleIdentifier,
+            restoreMinimized: restoreMinimized
+        )
+        return WindowActivation.verifyFrontmost(pid: app.processIdentifier)
+    }
 
-        let processName = app.localizedName ?? AppLauncher.displayName(forBundleIdentifier: app.bundleIdentifier ?? "")
-        for title in titlesForScript(windowTitle: windowTitle, displayTitle: displayTitle) {
-            if WindowFocusScript.focus(processName: processName, windowTitle: title) {
+    /// 应用级置前（恢复最小化、System Events 无窗口时仍可用）
+    static func activateRunningApplication(
+        pid: pid_t,
+        bundleIdentifier: String,
+        restoreMinimized: Bool
+    ) {
+        if let app = NSRunningApplication(processIdentifier: pid) {
+            if app.isHidden {
+                app.unhide()
+            }
+            var options: NSApplication.ActivationOptions = [.activateIgnoringOtherApps]
+            if restoreMinimized {
+                options.insert(.activateAllWindows)
+            }
+            app.activate(options: options)
+            if WindowActivation.verifyFrontmost(pid: pid) {
                 return
             }
         }
-        _ = WindowFocusScript.activateProcess(
-            processName: processName,
-            bundleIdentifier: app.bundleIdentifier,
-            allWindows: false
-        )
-    }
 
-    private static func hasOnScreenWindow(pid: pid_t) -> Bool {
-        WindowEnumerator.onScreenWindows().contains { $0.pid == pid }
+        if !bundleIdentifier.isEmpty {
+            AppLauncher.activatePinned(
+                bundleIdentifier: bundleIdentifier,
+                showAllWindows: restoreMinimized
+            )
+        }
     }
 
     static func titlesForScript(windowTitle: String, displayTitle: String) -> [String] {

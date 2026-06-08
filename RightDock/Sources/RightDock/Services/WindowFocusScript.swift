@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 
 /// 通过 System Events 切换窗口（对 Cursor / Electron / 浏览器更稳定）
+@MainActor
 enum WindowFocusScript {
     @discardableResult
     static func focus(processName: String, windowTitle: String) -> Bool {
@@ -39,6 +40,13 @@ enum WindowFocusScript {
         let process = processName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !process.isEmpty else { return false }
 
+        if WindowFocusHelper.activateRunningApplication(
+            bundleIdentifier: bundleIdentifier,
+            restoreMinimized: allWindows
+        ) {
+            return true
+        }
+
         if let bundleIdentifier, !bundleIdentifier.isEmpty {
             let byBundle = """
             try
@@ -46,6 +54,12 @@ enum WindowFocusScript {
             end try
             """
             _ = runAppleScript(byBundle)
+            if WindowFocusHelper.activateRunningApplication(
+                bundleIdentifier: bundleIdentifier,
+                restoreMinimized: allWindows
+            ) {
+                return true
+            }
         }
 
         let source: String
@@ -96,6 +110,10 @@ enum WindowFocusScript {
         }
 
         return runAppleScript(source) == "ok"
+            || WindowFocusHelper.activateRunningApplication(
+                bundleIdentifier: bundleIdentifier,
+                restoreMinimized: allWindows
+            )
     }
 
     private static func runAppleScript(_ source: String) -> String? {
