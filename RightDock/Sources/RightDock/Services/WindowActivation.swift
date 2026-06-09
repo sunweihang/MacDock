@@ -43,37 +43,21 @@ enum WindowActivation {
         guard let app = NSRunningApplication(processIdentifier: pid) else { return }
         let bundleId = bundleIdentifier ?? app.bundleIdentifier ?? ""
         let processNames = candidateProcessNames(app: app, bundleIdentifier: bundleId)
-        let trimmedTitle = windowTitle.trimmingCharacters(in: .whitespacesAndNewlines)
 
         app.activate(options: [.activateIgnoringOtherApps])
 
-        if trimmedTitle.isEmpty, AppBundlePolicy.isElectron(bundleIdentifier: bundleId) {
-            for name in processNames {
-                if WindowFocusScript.activateProcess(
-                    processName: name,
-                    bundleIdentifier: bundleId.isEmpty ? nil : bundleId,
-                    allWindows: false
-                ) {
-                    return
-                }
-            }
-        }
-
         for name in processNames {
+            if windowID != 0,
+               WindowFocusScript.focus(processName: name, windowID: windowID),
+               focusMatchesWindow(pid: pid, windowID: windowID, windowTitle: windowTitle, displayTitle: displayTitle) {
+                return
+            }
+
             for title in WindowFocusHelper.titlesForScript(windowTitle: windowTitle, displayTitle: displayTitle) {
                 if WindowFocusScript.focus(processName: name, windowTitle: title),
                    focusMatchesWindow(pid: pid, windowID: windowID, windowTitle: windowTitle, displayTitle: displayTitle) {
                     return
                 }
-            }
-
-            if WindowFocusScript.activateProcess(
-                processName: name,
-                bundleIdentifier: bundleId.isEmpty ? nil : bundleId,
-                allWindows: false
-            ),
-               focusMatchesWindow(pid: pid, windowID: windowID, windowTitle: windowTitle, displayTitle: displayTitle) {
-                return
             }
         }
 
@@ -92,7 +76,7 @@ enum WindowActivation {
         NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
     }
 
-    private static func focusMatchesWindow(
+    static func focusMatchesWindow(
         pid: pid_t,
         windowID: CGWindowID,
         windowTitle: String,
@@ -103,21 +87,28 @@ enum WindowActivation {
         let trimmedTitle = windowTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDisplay = displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if let focusedTitle = WindowFocusHelper.focusedWindowTitle(pid: pid) {
-            if !trimmedTitle.isEmpty, focusedTitle == trimmedTitle { return true }
-            if !trimmedDisplay.isEmpty, focusedTitle == trimmedDisplay { return true }
-            for title in WindowFocusHelper.titlesForScript(windowTitle: windowTitle, displayTitle: displayTitle) {
-                if focusedTitle == title { return true }
-            }
-        }
-
         if windowID != 0,
            let frontID = WindowFocusHelper.focusedWindowID(pid: pid),
            frontID == windowID {
             return true
         }
 
+        if let focusedTitle = WindowFocusHelper.focusedWindowTitle(pid: pid) {
+            if !trimmedTitle.isEmpty, titlesMatch(focusedTitle, trimmedTitle) { return true }
+            if !trimmedDisplay.isEmpty, titlesMatch(focusedTitle, trimmedDisplay) { return true }
+            for title in WindowFocusHelper.titlesForScript(windowTitle: windowTitle, displayTitle: displayTitle) {
+                if titlesMatch(focusedTitle, title) { return true }
+            }
+        }
+
         return trimmedTitle.isEmpty && windowID == 0
+    }
+
+    private static func titlesMatch(_ focused: String, _ target: String) -> Bool {
+        if focused == target { return true }
+        if focused.localizedCaseInsensitiveContains(target) { return true }
+        if target.localizedCaseInsensitiveContains(focused) { return true }
+        return false
     }
 
     private static func candidateProcessNames(app: NSRunningApplication, bundleIdentifier: String) -> [String] {

@@ -59,25 +59,22 @@ enum WindowFocusHelper {
         guard let app = NSRunningApplication(processIdentifier: pid) else { return }
         let bundleId = app.bundleIdentifier ?? ""
 
-        let onScreenIDs = Set(
-            WindowEnumerator.onScreenWindows()
-                .filter { $0.windowID != 0 }
-                .map(\.windowID)
+        WindowActivation.focusWindow(
+            windowID: targetWindowID,
+            pid: pid,
+            bounds: bounds,
+            windowTitle: windowTitle,
+            displayTitle: displayTitle,
+            bundleIdentifier: bundleId.isEmpty ? nil : bundleId
         )
-        let windowIsVisible = targetWindowID != 0 && onScreenIDs.contains(targetWindowID)
 
-        if windowIsVisible {
-            WindowActivation.focusWindow(
-                windowID: targetWindowID,
-                pid: pid,
-                bounds: bounds,
-                windowTitle: windowTitle,
-                displayTitle: displayTitle,
-                bundleIdentifier: bundleId.isEmpty ? nil : bundleId
-            )
-            if WindowActivation.verifyFrontmost(pid: pid) {
-                return
-            }
+        if WindowActivation.focusMatchesWindow(
+            pid: pid,
+            windowID: targetWindowID,
+            windowTitle: windowTitle,
+            displayTitle: displayTitle
+        ) {
+            return
         }
 
         activateRunningApplication(

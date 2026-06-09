@@ -15,12 +15,39 @@ enum WindowFocusScript {
             tell process "\(process.appleScriptEscaped)"
                 set frontmost to true
                 repeat with w in windows
-                    if name of w is "\(title.appleScriptEscaped)" then
+                    set wName to name of w
+                    if wName is "\(title.appleScriptEscaped)" or wName contains "\(title.appleScriptEscaped)" or "\(title.appleScriptEscaped)" contains wName then
                         try
                             perform action "AXRaise" of w
                         end try
                         return "ok"
                     end if
+                end repeat
+            end tell
+        end tell
+        return "missing"
+        """
+
+        return runAppleScript(source) == "ok"
+    }
+
+    /// 按 CGWindowID 切换（同应用多窗口时比标题更稳定）
+    @discardableResult
+    static func focus(processName: String, windowID: CGWindowID) -> Bool {
+        let process = processName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !process.isEmpty, windowID != 0 else { return false }
+
+        let source = """
+        tell application "System Events"
+            tell process "\(process.appleScriptEscaped)"
+                set frontmost to true
+                repeat with w in windows
+                    try
+                        if (value of attribute "AXWindowID" of w) is \(windowID) then
+                            perform action "AXRaise" of w
+                            return "ok"
+                        end if
+                    end try
                 end repeat
             end tell
         end tell
@@ -40,13 +67,6 @@ enum WindowFocusScript {
         let process = processName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !process.isEmpty else { return false }
 
-        if WindowFocusHelper.activateRunningApplication(
-            bundleIdentifier: bundleIdentifier,
-            restoreMinimized: allWindows
-        ) {
-            return true
-        }
-
         if let bundleIdentifier, !bundleIdentifier.isEmpty {
             let byBundle = """
             try
@@ -54,12 +74,6 @@ enum WindowFocusScript {
             end try
             """
             _ = runAppleScript(byBundle)
-            if WindowFocusHelper.activateRunningApplication(
-                bundleIdentifier: bundleIdentifier,
-                restoreMinimized: allWindows
-            ) {
-                return true
-            }
         }
 
         let source: String
@@ -85,7 +99,6 @@ enum WindowFocusScript {
                 end if
                 tell process "\(process.appleScriptEscaped)"
                     set frontmost to true
-                    set frontWindow to missing value
                     repeat with w in windows
                         try
                             set isMin to value of attribute "AXMinimized" of w
@@ -109,11 +122,14 @@ enum WindowFocusScript {
             """
         }
 
-        return runAppleScript(source) == "ok"
-            || WindowFocusHelper.activateRunningApplication(
-                bundleIdentifier: bundleIdentifier,
-                restoreMinimized: allWindows
-            )
+        if runAppleScript(source) == "ok" {
+            return true
+        }
+
+        return WindowFocusHelper.activateRunningApplication(
+            bundleIdentifier: bundleIdentifier,
+            restoreMinimized: allWindows
+        )
     }
 
     private static func runAppleScript(_ source: String) -> String? {

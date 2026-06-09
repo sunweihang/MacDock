@@ -354,6 +354,8 @@ enum WindowEnumerator {
                 continue
             }
             let axWindow = ref as! AXUIElement
+            let axID = PrivateAX.cgWindowID(for: axWindow) ?? axWindowID(from: axWindow) ?? 0
+            if window.windowID != 0, axID != window.windowID { continue }
             let title = axTitle(from: axWindow)
             guard !title.isEmpty else { continue }
             return EnumeratedWindow(
