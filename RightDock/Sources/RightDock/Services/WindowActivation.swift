@@ -44,6 +44,17 @@ enum WindowActivation {
         let bundleId = bundleIdentifier ?? app.bundleIdentifier ?? ""
         let processNames = candidateProcessNames(app: app, bundleIdentifier: bundleId)
 
+        if AppBundlePolicy.usesDialogRestoreActivation(bundleIdentifier: bundleId) {
+            for name in processNames {
+                if WindowFocusScript.restoreApplicationWindows(
+                    processName: name,
+                    bundleIdentifier: bundleId.isEmpty ? nil : bundleId
+                ), verifyFrontmost(pid: pid) {
+                    return
+                }
+            }
+        }
+
         app.activate(options: [.activateIgnoringOtherApps])
 
         for name in processNames {

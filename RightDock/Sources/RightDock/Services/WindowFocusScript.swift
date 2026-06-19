@@ -57,6 +57,46 @@ enum WindowFocusScript {
         return runAppleScript(source) == "ok"
     }
 
+    /// Fork 等：CG windowID 与 AX 标签页不对应，需批量取消最小化并置前。
+    @discardableResult
+    static func restoreApplicationWindows(
+        processName: String,
+        bundleIdentifier: String? = nil
+    ) -> Bool {
+        let process = processName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !process.isEmpty else { return false }
+
+        if let bundleIdentifier, !bundleIdentifier.isEmpty {
+            let byBundle = """
+            try
+                tell application id "\(bundleIdentifier.appleScriptEscaped)" to activate
+            end try
+            """
+            _ = runAppleScript(byBundle)
+        }
+
+        let source = """
+        tell application "System Events"
+            if not (exists process "\(process.appleScriptEscaped)") then
+                return "missing"
+            end if
+            tell process "\(process.appleScriptEscaped)"
+                set frontmost to true
+                repeat with w in windows
+                    try
+                        set value of attribute "AXMinimized" of w to false
+                    end try
+                    try
+                        perform action "AXRaise" of w
+                    end try
+                end repeat
+                return "ok"
+            end tell
+        end tell
+        """
+        return runAppleScript(source) == "ok"
+    }
+
     /// 固定区：按进程名置前窗口（不依赖窗口标题）
     @discardableResult
     static func activateProcess(

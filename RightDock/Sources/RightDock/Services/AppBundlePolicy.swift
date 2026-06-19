@@ -17,6 +17,27 @@ enum AppBundlePolicy {
         "com.cocos.creator",
     ]
 
+    /// Fork 会把每个仓库标签注册为 AXDialog；应用最小化后这些标签仍可能带 minimized 标记，不能按 Firefox 规则保留。
+    private static let axDialogAlwaysExcluded = [
+        "com.DanPristupov.Fork",
+    ]
+
+    /// CG 回退时窗口名来自标签幽灵窗，去重前应清空以免按标题拆成多条。
+    private static let stripsCgTitlesBeforeDedupe = axDialogAlwaysExcluded
+
+    static func excludesAXDialogSubrole(bundleIdentifier: String) -> Bool {
+        axDialogAlwaysExcluded.contains(bundleIdentifier)
+    }
+
+    static func shouldStripCgTitlesBeforeDedupe(bundleIdentifier: String) -> Bool {
+        stripsCgTitlesBeforeDedupe.contains(bundleIdentifier)
+    }
+
+    /// 主窗口以 AXDialog 标签存在、CG/AX windowID 不可靠，需用 System Events 批量取消最小化。
+    static func usesDialogRestoreActivation(bundleIdentifier: String) -> Bool {
+        excludesAXDialogSubrole(bundleIdentifier: bundleIdentifier)
+    }
+
     /// 辅助进程（小程序、Renderer 等）不应单独出现在窗口列表
     static func isHelperProcess(bundleIdentifier: String) -> Bool {
         let id = bundleIdentifier

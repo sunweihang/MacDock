@@ -44,6 +44,7 @@ enum WindowEnumerator {
         for pid in allowedPids {
             let bundleId = bundleIdForPid(pid) ?? ""
             var pidWindows: [EnumeratedWindow] = []
+            var usedCgFallback = false
 
             if accessibilityGranted {
                 if AppBundlePolicy.isElectron(bundleIdentifier: bundleId) {
@@ -65,6 +66,19 @@ enum WindowEnumerator {
                 if pidWindows.isEmpty, !AppBundlePolicy.isElectron(bundleIdentifier: bundleId) {
                     // Fork 等最小化时 AX 无标准窗，需用全量 CG 列表（Electron 跳过，避免关闭后幽灵窗）
                     pidWindows = cgWindows(forPid: pid)
+                    usedCgFallback = true
+                }
+            }
+
+            if usedCgFallback, AppBundlePolicy.shouldStripCgTitlesBeforeDedupe(bundleIdentifier: bundleId) {
+                pidWindows = pidWindows.map {
+                    EnumeratedWindow(
+                        windowID: $0.windowID,
+                        pid: $0.pid,
+                        title: "",
+                        bounds: $0.bounds,
+                        layer: $0.layer
+                    )
                 }
             }
 
@@ -73,7 +87,8 @@ enum WindowEnumerator {
             pidWindows = filterReachableWindows(
                 pidWindows,
                 onScreen: onScreen,
-                accessibilityGranted: accessibilityGranted
+                accessibilityGranted: accessibilityGranted,
+                bundleId: bundleId
             )
             result.append(contentsOf: pidWindows.map(supplementTitleFromAX))
         }
@@ -153,18 +168,27 @@ enum WindowEnumerator {
     private static func filterReachableWindows(
         _ windows: [EnumeratedWindow],
         onScreen: [EnumeratedWindow],
-        accessibilityGranted: Bool
+        accessibilityGranted: Bool,
+        bundleId: String
     ) -> [EnumeratedWindow] {
         let onScreenIDs = Set(onScreen.filter { $0.windowID != 0 }.map(\.windowID))
+        let forkMinimized = AppBundlePolicy.excludesAXDialogSubrole(bundleIdentifier: bundleId)
+            && forkAppearsMinimized(pid: windows.first?.pid ?? 0)
         return windows.filter { window in
-            isReachableWindow(window, onScreenIDs: onScreenIDs, accessibilityGranted: accessibilityGranted)
+            isReachableWindow(
+                window,
+                onScreenIDs: onScreenIDs,
+                accessibilityGranted: accessibilityGranted,
+                treatAsMinimizedApp: forkMinimized
+            )
         }
     }
 
     private static func isReachableWindow(
         _ window: EnumeratedWindow,
         onScreenIDs: Set<CGWindowID>,
-        accessibilityGranted: Bool
+        accessibilityGranted: Bool,
+        treatAsMinimizedApp: Bool = false
     ) -> Bool {
         if window.windowID != 0, onScreenIDs.contains(window.windowID) {
             return true
@@ -174,7 +198,62 @@ enum WindowEnumerator {
             return false
         }
 
-        return isAXMinimized(window)
+        if isAXMinimized(window) {
+            return true
+        }
+
+        // Fork 最小化：AX 标签页是 minimized AXDialog 且 windowID=0，与 CG 幽灵窗无法按 id 对应
+        if treatAsMinimizedApp,
+           WindowVisibilityFilter.isRealMainWindowGeometry(window.bounds, bundleId: bundleIdentifier(for: window.pid)) {
+            return true
+        }
+
+        return false
+    }
+
+    /// Fork 最小化时没有标准 AX 窗，只剩 minimized AXDialog 标签页
+    private static func forkAppearsMinimized(pid: pid_t) -> Bool {
+        guard pid != 0,
+              let bundleId = bundleIdentifier(for: pid),
+              AppBundlePolicy.excludesAXDialogSubrole(bundleIdentifier: bundleId) else {
+            return false
+        }
+
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement] else {
+            return false
+        }
+
+        var hasStandard = false
+        var hasMinimizedDialog = false
+        for axWindow in windows {
+            guard isAXWindowRole(axWindow) else { continue }
+            var subroleRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(axWindow, kAXSubroleAttribute as CFString, &subroleRef) == .success,
+               let subrole = subroleRef as? String,
+               subrole == kAXDialogSubrole as String {
+                if isMinimized(axWindow) {
+                    hasMinimizedDialog = true
+                }
+                continue
+            }
+            if isStandardWindow(axWindow, pid: pid) {
+                hasStandard = true
+            }
+        }
+        return !hasStandard && hasMinimizedDialog
+    }
+
+    private static func isAXWindowRole(_ window: AXUIElement) -> Bool {
+        var roleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString, &roleRef) == .success,
+              let role = roleRef as? String,
+              role == kAXWindowRole as String else {
+            return false
+        }
+        return true
     }
 
     private static func isAXMinimized(_ window: EnumeratedWindow) -> Bool {
@@ -186,7 +265,7 @@ enum WindowEnumerator {
         }
 
         for axWindow in windows {
-            guard isStandardWindow(axWindow) else { continue }
+            guard isStandardWindow(axWindow, pid: window.pid) else { continue }
             let windowID = PrivateAX.cgWindowID(for: axWindow) ?? axWindowID(from: axWindow) ?? 0
             if window.windowID != 0, windowID != window.windowID { continue }
 
@@ -210,7 +289,7 @@ enum WindowEnumerator {
         }
 
         return windows.compactMap { axWindow in
-            guard isStandardWindow(axWindow) else { return nil }
+            guard isStandardWindow(axWindow, pid: pid) else { return nil }
             let title = axTitle(from: axWindow)
             let windowID = PrivateAX.cgWindowID(for: axWindow) ?? axWindowID(from: axWindow) ?? 0
             let bounds = WindowBoundsMatcher.axFrame(of: axWindow) ?? .zero
@@ -260,7 +339,7 @@ enum WindowEnumerator {
         }
 
         return windows.compactMap { axWindow in
-            guard isStandardWindow(axWindow), isMinimized(axWindow) else { return nil }
+            guard isStandardWindow(axWindow, pid: pid), isMinimized(axWindow) else { return nil }
 
             let title = axTitle(from: axWindow)
             let windowID = PrivateAX.cgWindowID(for: axWindow) ?? axWindowID(from: axWindow) ?? 0
@@ -285,7 +364,7 @@ enum WindowEnumerator {
         return minimized
     }
 
-    private static func isStandardWindow(_ window: AXUIElement) -> Bool {
+    private static func isStandardWindow(_ window: AXUIElement, pid: pid_t) -> Bool {
         var roleRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(window, kAXRoleAttribute as CFString, &roleRef) == .success,
               let role = roleRef as? String,
@@ -300,11 +379,19 @@ enum WindowEnumerator {
                 return false
             }
             if subrole == kAXDialogSubrole as String {
-                // Fork 未最小化的仓库标签也是 AXDialog，仍排除；Firefox 最小化后主窗口会变成 AXDialog
+                // Fork 仓库标签在应用最小化后仍是 AXDialog；Firefox 最小化后主窗口会变成 AXDialog
+                if let bundleId = bundleIdentifier(for: pid),
+                   AppBundlePolicy.excludesAXDialogSubrole(bundleIdentifier: bundleId) {
+                    return false
+                }
                 return isMinimized(window)
             }
         }
         return true
+    }
+
+    private static func bundleIdentifier(for pid: pid_t) -> String? {
+        NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
     }
 
     /// 同一进程、相同几何位置的 CG 幽灵窗（Fork 多标签）合并为一个
