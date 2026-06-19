@@ -5,31 +5,19 @@ import AppKit
 enum DockScreenLayout {
     private static var pinnedHostFrame: NSRect?
     private static var lastPanelFrame: NSRect = .zero
-    private static let hostReservationThreshold: CGFloat = 6
 
     static func totalReservedWidth(settings: DockSettings) -> CGFloat {
         settings.barWidth
     }
 
-    /// 系统程序坞 / RightDock 实际所在的屏幕（多屏时仅一块屏需要让出右侧）。
+    /// RightDock 始终贴在全局最右缘的那块屏（多屏时不用 NSScreen.main，也不跟系统 Dock 占位走）。
     static func hostScreen() -> NSScreen? {
-        // 以 RightDock 面板实际位置为准（多屏时最可靠，不跟 NSScreen.main 走）
-        if let match = screenContainingRightEdge(of: lastPanelFrame) {
-            return match
-        }
+        rightmostScreen()
+    }
 
-        if let frame = pinnedHostFrame,
-           let match = NSScreen.screens.first(where: { $0.frame == frame }) {
-            return match
-        }
-
-        let reservedScreens = NSScreen.screens.filter { systemReservedWidth(on: $0) > hostReservationThreshold }
-        if let best = reservedScreens.max(by: { systemReservedWidth(on: $0) < systemReservedWidth(on: $1) }) {
-            return best
-        }
-
-        // 多屏且系统 Dock 未让出右侧时，RightDock 仍在最右屏 — 不用 NSScreen.main
-        return NSScreen.screens.max(by: { $0.frame.maxX < $1.frame.maxX })
+    /// 物理坐标 `frame.maxX` 最大的显示器。
+    static func rightmostScreen() -> NSScreen? {
+        NSScreen.screens.max(by: { $0.frame.maxX < $1.frame.maxX })
             ?? NSScreen.main
             ?? NSScreen.screens.first
     }
@@ -40,10 +28,24 @@ enum DockScreenLayout {
 
     static func recordPanelFrame(_ frame: NSRect) {
         guard frame.width > 1, frame.height > 1 else { return }
-        lastPanelFrame = frame
-        if let screen = screenContainingRightEdge(of: frame) {
-            pinHostScreen(screen)
+        guard let screen = screenContainingRightEdge(of: frame),
+              screensAreEqual(screen, rightmostScreen()) else {
+            return
         }
+        lastPanelFrame = frame
+        pinHostScreen(screen)
+    }
+
+    /// 显示器布局变化后丢弃旧位置，避免面板继续停在已非最右的屏幕上。
+    static func invalidateStalePanelAnchor() {
+        guard lastPanelFrame.width > 1,
+              let anchored = screenContainingRightEdge(of: lastPanelFrame),
+              let rightmost = rightmostScreen(),
+              !screensAreEqual(anchored, rightmost) else {
+            return
+        }
+        lastPanelFrame = .zero
+        pinnedHostFrame = nil
     }
 
     static func screensAreEqual(_ lhs: NSScreen?, _ rhs: NSScreen?) -> Bool {
@@ -86,10 +88,9 @@ enum DockScreenLayout {
     /// 最大化窗口右缘应停靠的 X（屏幕坐标，左下角原点）= RightDock 面板左缘
     static func dockLeftEdge(for screen: NSScreen?, barWidth: CGFloat) -> CGFloat {
         let clampedWidth = min(max(barWidth, DockSettings.barWidthMin), DockSettings.barWidthMax)
-        if let host = hostScreen(),
+        if let host = rightmostScreen(),
            screensAreEqual(screen, host),
-           lastPanelFrame.width > 1,
-           screensAreEqual(screenContainingRightEdge(of: lastPanelFrame), host) {
+           lastPanelFrame.width > 1 {
             return lastPanelFrame.minX
         }
         let screenFrame = screen?.frame ?? NSScreen.main?.frame ?? .zero

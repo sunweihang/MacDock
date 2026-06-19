@@ -35,11 +35,18 @@ enum SystemDockController {
         scheduleCalibration(targetWidth: reservedWidth, delay: 0.5)
     }
 
-    /// 多屏时系统 Dock 可能被还原为底部；仅当 RightDock 在主屏时才同步系统占位。
+    /// 替换系统 Dock：主屏时右侧占位对齐 visibleFrame；多屏且 RightDock 在最右外接屏时隐藏底部 Dock。
     @MainActor
     static func ensureReplacementActive(reservedWidth: CGFloat) {
-        guard DockScreenLayout.shouldSyncSystemDockReservation() else { return }
+        if DockScreenLayout.shouldSyncSystemDockReservation() {
+            ensureRightEdgePlaceholder(reservedWidth: reservedWidth)
+        } else {
+            ensureBottomDockAutohidden()
+        }
+    }
 
+    @MainActor
+    private static func ensureRightEdgePlaceholder(reservedWidth: CGFloat) {
         guard readBackup() != nil else {
             activateReplacement(reservedWidth: reservedWidth)
             return
@@ -50,6 +57,31 @@ enum SystemDockController {
             applyReserveScript(width: reservedWidth)
             scheduleCalibration(targetWidth: reservedWidth, delay: 0.35)
         }
+    }
+
+    /// RightDock 不在主屏时，macOS 无法在副屏做右侧占位；改为 autohide 隐藏底部系统 Dock。
+    @MainActor
+    private static func ensureBottomDockAutohidden() {
+        pendingSync?.cancel()
+        pendingSync = nil
+        pendingCalibration?.cancel()
+        pendingCalibration = nil
+        lastCalibrationMeasured = nil
+        reservesRightEdgeForFullscreen = false
+
+        if readBackup() == nil {
+            saveBackup(sanitizedBackupFromCurrentDock())
+        }
+
+        let orientation = readDockString("orientation") ?? "bottom"
+        let autohide = readDockBool("autohide") ?? false
+        guard orientation != "bottom" || !autohide else { return }
+
+        _ = runShell("""
+        /usr/bin/defaults write com.apple.dock orientation -string bottom && \
+        /usr/bin/defaults write com.apple.dock autohide -bool true && \
+        /usr/bin/killall Dock 2>/dev/null || true
+        """)
     }
 
     /// 隐藏 RightDock 面板时临时恢复系统程序坞（保留备份，再次显示时可继续替换）

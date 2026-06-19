@@ -296,12 +296,13 @@ enum WindowEnumerator {
         var subroleRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &subroleRef) == .success,
            let subrole = subroleRef as? String {
-            // Fork 会把每个仓库标签注册为 AXDialog，不是独立窗口
-            let excluded: Set<String> = [
-                kAXFloatingWindowSubrole as String,
-                kAXDialogSubrole as String,
-            ]
-            return !excluded.contains(subrole)
+            if subrole == kAXFloatingWindowSubrole as String {
+                return false
+            }
+            if subrole == kAXDialogSubrole as String {
+                // Fork 未最小化的仓库标签也是 AXDialog，仍排除；Firefox 最小化后主窗口会变成 AXDialog
+                return isMinimized(window)
+            }
         }
         return true
     }
@@ -312,7 +313,7 @@ enum WindowEnumerator {
         var withoutFrame: [EnumeratedWindow] = []
 
         for window in windows {
-            let key = frameDedupeKey(window.bounds)
+            let key = frameDedupeKey(window)
             if key.isEmpty {
                 withoutFrame.append(window)
                 continue
@@ -327,9 +328,14 @@ enum WindowEnumerator {
         return Array(byFrame.values) + withoutFrame
     }
 
-    private static func frameDedupeKey(_ bounds: CGRect) -> String {
+    /// Fork 等同几何幽灵窗（常无标题）合并；有标题的独立窗口（Cursor 多窗同尺寸）保留
+    private static func frameDedupeKey(_ window: EnumeratedWindow) -> String {
+        let bounds = window.bounds
         guard bounds.width > 0, bounds.height > 0 else { return "" }
-        return "\(Int(bounds.origin.x)),\(Int(bounds.origin.y)),\(Int(bounds.width)),\(Int(bounds.height))"
+        let frame = "\(Int(bounds.origin.x)),\(Int(bounds.origin.y)),\(Int(bounds.width)),\(Int(bounds.height))"
+        let title = window.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if title.isEmpty { return frame }
+        return "\(frame)|\(title)"
     }
 
     private static func pickRepresentative(_ a: EnumeratedWindow, _ b: EnumeratedWindow) -> EnumeratedWindow {

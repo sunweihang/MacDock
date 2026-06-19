@@ -233,15 +233,21 @@ final class DockPanelController: NSObject {
     }
 
     @objc private func screenParametersChanged(_ notification: Notification) {
+        DockScreenLayout.invalidateStalePanelAnchor()
         if isLiveResizingWidth, let width = livePreviewWidth {
             applyPanelWidth(width)
             return
         }
         applyScreenFrame()
         if settings.replaceSystemDock {
-            SystemDockController.scheduleCalibration(
-                targetWidth: DockScreenLayout.totalReservedWidth(settings: settings)
+            SystemDockController.ensureReplacementActive(
+                reservedWidth: DockScreenLayout.totalReservedWidth(settings: settings)
             )
+            if DockScreenLayout.shouldSyncSystemDockReservation() {
+                SystemDockController.scheduleCalibration(
+                    targetWidth: DockScreenLayout.totalReservedWidth(settings: settings)
+                )
+            }
         }
     }
 
@@ -326,14 +332,8 @@ final class DockPanelController: NSObject {
         DockScreenLayout.frame(for: screen, settings: settings)
     }
 
-    /// 与系统程序坞同屏（`visibleFrame` 右侧被让出的那块屏），多屏时不会跟鼠标跑到别的显示器。
+    /// 始终布局在全局最右缘的显示器，不因面板当前位置或系统 Dock 占位而留在主屏。
     private func targetScreen() -> NSScreen? {
-        if let dockPanel = self.panel, dockPanel.frame.size != .zero {
-            let probe = NSPoint(x: dockPanel.frame.maxX - 1, y: dockPanel.frame.midY)
-            if let match = NSScreen.screens.first(where: { $0.frame.contains(probe) }) {
-                return match
-            }
-        }
-        return DockScreenLayout.hostScreen()
+        DockScreenLayout.hostScreen()
     }
 }
