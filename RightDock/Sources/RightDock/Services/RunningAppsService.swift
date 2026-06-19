@@ -11,8 +11,16 @@ final class RunningAppsService: NSObject, ObservableObject {
 
     private let settings: DockSettings
     private let ownBundleId = Bundle.main.bundleIdentifier
+    private let ownPid = ProcessInfo.processInfo.processIdentifier
     private var frontmostTimer: Timer?
     private var windowListTimer: Timer?
+    /// 屏幕可见窗口快照，用于在关闭/新建窗口时立刻触发列表刷新
+    private var lastOnScreenFingerprint: Set<OnScreenWindowFingerprint> = []
+
+    private struct OnScreenWindowFingerprint: Hashable {
+        let pid: pid_t
+        let windowID: CGWindowID
+    }
 
     init(settings: DockSettings) {
         self.settings = settings
@@ -27,9 +35,9 @@ final class RunningAppsService: NSObject, ObservableObject {
             userInfo: nil,
             repeats: true
         )
-        // 窗口列表：较慢全量刷新
+        // 窗口列表：兜底全量刷新（最小化窗口关闭等 CG 快照捕捉不到的变化）
         windowListTimer = Timer.scheduledTimer(
-            timeInterval: 2.0,
+            timeInterval: 0.8,
             target: self,
             selector: #selector(timerRefreshWindowList),
             userInfo: nil,
@@ -116,6 +124,22 @@ final class RunningAppsService: NSObject, ObservableObject {
 
     private func refreshWindowList() {
         runningApps = buildWindowItems()
+        lastOnScreenFingerprint = currentOnScreenFingerprint()
+    }
+
+    /// 仅 CG 屏幕窗口，无 AX 调用，可高频比对
+    private func currentOnScreenFingerprint() -> Set<OnScreenWindowFingerprint> {
+        Set(
+            WindowEnumerator.onScreenWindows()
+                .filter { $0.pid != ownPid }
+                .map { OnScreenWindowFingerprint(pid: $0.pid, windowID: $0.windowID) }
+        )
+    }
+
+    private func refreshWindowListIfOnScreenChanged() {
+        let fingerprint = currentOnScreenFingerprint()
+        guard fingerprint != lastOnScreenFingerprint else { return }
+        refreshWindowList()
     }
 
     private func buildWindowItems() -> [RunningWindowItem] {
@@ -207,6 +231,7 @@ final class RunningAppsService: NSObject, ObservableObject {
 
     @objc private func timerRefreshFrontmost() {
         refreshFrontmost()
+        refreshWindowListIfOnScreenChanged()
     }
 
     @objc private func timerRefreshWindowList() {
